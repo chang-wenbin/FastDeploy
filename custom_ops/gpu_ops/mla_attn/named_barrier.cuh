@@ -40,6 +40,7 @@ enum class NamedBarriers {
   kWG1WG2Sync = 7,
   kWG0WG1WG2Sync = 8,
   kWG1WG2LastSync = 9,
+  kAllWGSync = 10,
 };
 
 }  // namespace mla_attn

@@ -194,6 +194,8 @@ class MLAAttentionBackend(AttentionBackend):
             metadata.kv_batch_ids,
             metadata.kv_tile_ids_per_batch,
             metadata.kv_num_blocks,
+            metadata.decoder_num_blocks,
+            metadata.decoder_chunk_size_cpu,
             metadata.max_len_kv,
         ) = get_block_shape_and_split_kv_block(
             forward_meta.seq_lens_encoder,
@@ -366,8 +368,9 @@ class MLAAttentionBackend(AttentionBackend):
             metadata.kv_num_blocks,
             forward_meta.decoder_batch_ids,
             forward_meta.decoder_tile_ids_per_batch,
+            metadata.decoder_num_blocks,
             forward_meta.decoder_num_blocks_cpu,
-            forward_meta.decoder_num_blocks_cpu,
+            metadata.decoder_chunk_size_cpu,
             metadata.max_enc_len_this_time,
             metadata.max_dec_len_this_time,
             metadata.max_len_kv,
@@ -394,6 +397,7 @@ class MLAAttentionBackend(AttentionBackend):
             True,  # causal
             speculate_decoder,
         )
+        print("OP+++++++++++++++++fmha_out: ", fmha_out)
 
         return fmha_out
 
@@ -487,8 +491,9 @@ class MLAAttentionBackend(AttentionBackend):
                 metadata.kv_num_blocks,
                 forward_meta.decoder_batch_ids,
                 forward_meta.decoder_tile_ids_per_batch,
+                metadata.decoder_num_blocks,
                 forward_meta.decoder_num_blocks_cpu,
-                forward_meta.decoder_num_blocks_cpu,
+                metadata.decoder_chunk_size_cpu,
                 metadata.max_enc_len_this_time,
                 metadata.max_dec_len_this_time,
                 metadata.max_len_kv,
@@ -515,5 +520,6 @@ class MLAAttentionBackend(AttentionBackend):
                 True,  # causal
                 speculate_decoder,
             )
-
+            print("mix-----------------q",  q)
+            print("mix+++++++++++++++++fmha_out: ", fmha_out)
             return fmha_out
