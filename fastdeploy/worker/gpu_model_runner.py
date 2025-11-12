@@ -1408,7 +1408,7 @@ class GPUModelRunner(ModelRunnerBase):
             kv_cache_quant_type = self.quant_config.kv_cache_quant_type
 
         # Get kv cache shape
-        key_cache_shape, value_cache_shape = self.attn_backends[0].get_kv_cache_shape(
+        key_cache_shape, value_cache_shape, indexer_cache_shape = self.attn_backends[0].get_kv_cache_shape(
             max_num_blocks=max_block_num, kv_cache_quant_type=kv_cache_quant_type
         )
         if kv_cache_quant_type == "block_wise_fp8":
@@ -1443,19 +1443,27 @@ class GPUModelRunner(ModelRunnerBase):
         from fastdeploy import envs
 
         self.mla_cache = envs.FD_ATTENTION_BACKEND == "MLA_ATTN"
+        self.sparse_cache = True
         for i in range(self.model_config.num_hidden_layers):
             # init key cache
             key_cache_name = f"key_caches_{i}_rank{local_rank}.device{self.device_id}"
+
+            indexer_cache_name = f"indexer_caches_{i}_rank{local_rank}.device{self.device_id}"
+
             if value_cache_shape:
                 val_cache_name = f"value_caches_{i}_rank{local_rank}.device{self.device_id}"
             if create_cache_tensor:
                 logger.info(f"..creating kv cache for layer {i}: key:{key_cache_shape}, value:{value_cache_shape}")
                 key_cache = paddle.full(shape=key_cache_shape, fill_value=0, dtype=cache_type)
                 set_data_ipc(key_cache, key_cache_name)
+
+                indexer_cache = paddle.full(shape=indexer_cache_shape, fill_value=0, dtype=cache_type)
+                # set_data_ipc(indexer_cache, indexer_cache_name)
+
                 if value_cache_shape:
                     val_cache = paddle.full(shape=value_cache_shape, fill_value=0, dtype=cache_type)
                     set_data_ipc(val_cache, val_cache_name)
-                    cache_kvs_list.extend([key_cache, val_cache])
+                    cache_kvs_list.extend([key_cache, val_cache, indexer_cache])
                 else:
                     cache_kvs_list.extend([key_cache])
                 if kv_cache_quant_type == "block_wise_fp8":
@@ -1473,10 +1481,13 @@ class GPUModelRunner(ModelRunnerBase):
                 logger.info(f"..attaching kv cache for layer {i}: key:{key_cache_shape}, value:{value_cache_shape}")
                 key_cache = paddle.empty(shape=[], dtype=cache_type)
                 key_cache = share_external_data(key_cache, key_cache_name, key_cache_shape)
+                indexer_cache = paddle.empty(shape=[], dtype=cache_type)
+                indexer_cache = share_external_data(indexer_cache, indexer_cache_name, indexer_cache_shape)
+
                 if value_cache_shape:
                     val_cache = paddle.empty(shape=[], dtype=cache_type)
                     val_cache = share_external_data(val_cache, val_cache_name, value_cache_shape)
-                    cache_kvs_list.extend([key_cache, val_cache])
+                    cache_kvs_list.extend([key_cache, val_cache, indexer_cache])
                 else:
                     cache_kvs_list.extend([key_cache])
 
@@ -2452,6 +2463,10 @@ class GPUModelRunner(ModelRunnerBase):
                 * (self.cache_config.block_size)
                 * num_layers
             )  # compress_kv + k_pe
+        elif self.sparse_cache:
+            required_memory = (
+                byte_of_dtype * 3 * (self.cache_config.block_size * hidden_dim) * num_layers
+            )  # k + v + ik
         else:
             required_memory = byte_of_dtype * 2 * (self.cache_config.block_size * hidden_dim) * num_layers  # k + v
         return required_memory
