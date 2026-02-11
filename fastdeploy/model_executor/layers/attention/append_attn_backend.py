@@ -182,6 +182,8 @@ class AppendAttentionBackend(AttentionBackend):
                 }
             )
         self.fd_config = fd_config
+        # self.swa_flag = paddle.to_tensor([True,False,False,False,]*8,).reshape([1,-1,1])
+        
 
     def init_attention_metadata(self, forward_meta: ForwardMeta):
         """Initialize attntion metadata hence all layers in the forward pass can reuse it."""
@@ -278,7 +280,7 @@ class AppendAttentionBackend(AttentionBackend):
         if rope_already_applied and forward_meta.rotary_embs is not None:
             forward_meta.rotary_embs = self._get_identity_rotary_embs(forward_meta.rotary_embs)
 
-        sliding_window = layer.sliding_window
+        sliding_window = 1024#layer.sliding_window
 
         norm_after_rope_in_kernel = not getattr(layer, "qk_norm_before_rope", False)
         q_norm_weight = getattr(layer, "q_norm_weight", None) if norm_after_rope_in_kernel else None
@@ -429,7 +431,7 @@ class AppendAttentionBackend(AttentionBackend):
             )
         else:
             res = append_attention(
-                qkv,
+                qkv.clone(),
                 cache_k,
                 cache_v,
                 forward_meta.seq_lens_encoder,
@@ -482,5 +484,64 @@ class AppendAttentionBackend(AttentionBackend):
                 self.causal,
                 self.speculative_method is not None,
                 sliding_window,
-            )
+            ).reshape(-1, self.num_heads,self.head_dim)
+            
+            res_full = append_attention(
+                qkv,
+                cache_k,
+                cache_v,
+                forward_meta.seq_lens_encoder,
+                forward_meta.seq_lens_decoder,
+                forward_meta.seq_lens_this_time,
+                forward_meta.batch_id_per_token,
+                forward_meta.cu_seqlens_q,
+                forward_meta.block_tables,
+                forward_meta.encoder_batch_ids,
+                forward_meta.encoder_tile_ids_per_batch,
+                forward_meta.encoder_num_blocks_x_cpu,
+                forward_meta.kv_batch_ids,
+                forward_meta.kv_tile_ids_per_batch,
+                forward_meta.kv_num_blocks_x_cpu,
+                forward_meta.decoder_batch_ids,
+                forward_meta.decoder_tile_ids_per_batch,
+                forward_meta.decoder_num_blocks_cpu,
+                forward_meta.max_len_tensor_cpu,
+                forward_meta.rotary_embs,
+                forward_meta.attn_mask,
+                layer.qkv_bias,
+                layer.qkv_scale,
+                cache_k_scales,
+                cache_v_scales,
+                getattr(layer, "cache_k_out_scale", None),
+                getattr(layer, "cache_v_out_scale", None),
+                getattr(layer, "cache_k_zp", None),
+                getattr(layer, "cache_v_zp", None),
+                layer.linear_shift,
+                layer.linear_smooth,
+                forward_meta.attn_mask_offsets,
+                metadata.kv_signal_data_list[layer.layer_id],
+                getattr(layer, "q_norm_weight", None),
+                getattr(layer, "k_norm_weight", None),
+                getattr(layer, "sinks", None),
+                getattr(layer, "rms_norm_eps", 1e-6),
+                metadata._fuse_kernel_compute_dtype,
+                getattr(layer, "cache_quant_type_str", "none"),
+                layer.use_neox_rotary_style,
+                self.rope_3d,
+                self.max_seq_len,
+                getattr(layer, "quant_max_bound", 0.0),
+                getattr(layer, "quant_min_bound", 0.0),
+                getattr(layer, "out_scale", -1.0),
+                self.encoder_block_shape_q,
+                self.decoder_block_shape_q,
+                metadata.max_partition_size,
+                metadata.encoder_max_partition_size,
+                self.speculate_max_draft_token_num + 1,
+                self.causal,
+                self.speculative_method is not None,
+                0,
+            ).reshape(-1, self.num_heads,self.head_dim)
+            if hasattr(self, "swa_flag"):
+                res = paddle.where(self.swa_flag, res, res_full)
+            res = res.reshape((-1, self.num_heads * self.head_dim))
         return res
