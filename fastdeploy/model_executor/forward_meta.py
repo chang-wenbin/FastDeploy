@@ -124,6 +124,8 @@ class ForwardMeta:
 
     decoder_chunk_size_device: Optional[paddle.Tensor] = None
 
+    position_ids: Optional[paddle.Tensor] = None
+
     # Sequence length of encoder for ever batch
     seq_lens_encoder: Optional[paddle.Tensor] = None
     # Sequence length of Encoder for ever batch
